@@ -4,6 +4,8 @@
 #include <math.h>
 #include <string>
 #include <vector>
+#include "Eigen-3.3/Eigen/Core"
+#include "Eigen-3.3/Eigen/QR"
 
 // for convenience
 using std::string;
@@ -23,7 +25,24 @@ string hasData(string s) {
   }
   return "";
 }
-
+/*
+vector<double> get_JLT_coeffs(vector<double> current_state, vector<double> target_state, double elapsed_time)
+{
+  VectorXd high(3);
+  VectorXd numerator(3);
+  MatrixXd denominator(3,3);
+   
+  numerator << (end[0] - (start[0] + start[1]*T + start[2]*T*T/2)),
+               (end[1] - (start[1] + start[2]*T)),
+               (end[2] - start[2]);
+  denominator << pow(T, 3),    pow(T, 4),    pow(T, 5),
+               3*pow(T, 2),  4*pow(T, 3),  5*pow(T, 4),
+               6*T,         12*pow(T, 2), 20*pow(T, 3);
+  denominator = denominator.inverse();
+  high = (numerator.transpose() * denominator.transpose());
+  return {start[0], start[1], start[2]/2, high[0], high[1], high[2]};
+}
+*/
 //
 // Helper functions related to waypoints and converting from XY to Frenet
 //   or vice versa

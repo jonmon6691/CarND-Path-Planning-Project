@@ -7,11 +7,19 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
 #include "json.hpp"
+#include "spline.h"
 
 // for convenience
 using nlohmann::json;
 using std::string;
 using std::vector;
+
+#define TARGET_SPEED_MPH ((double)50)
+#define DELTA_T ((double)0.02)
+#define MPH_TO_MPS ((double)0.44704)
+#define TARGET_SPEED_MPS (TARGET_SPEED_MPH * MPH_TO_MPS)
+
+
 
 int main() {
   uWS::Hub h;
@@ -22,6 +30,7 @@ int main() {
   vector<double> map_waypoints_s;
   vector<double> map_waypoints_dx;
   vector<double> map_waypoints_dy;
+
 
   // Waypoint map to read from
   string map_file_ = "../data/highway_map.csv";
@@ -50,20 +59,32 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
+  double s = 124.834;
+  tk::spline s_to_x;// = new tk::spline();
+  tk::spline s_to_y;// = new tk::spline();
+  s_to_x.set_points(map_waypoints_s, map_waypoints_x);
+  s_to_x.set_points(map_waypoints_s, map_waypoints_y);
+
+  std::cout << s_to_x(s);
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy]
+               &map_waypoints_dx,&map_waypoints_dy, &s_to_x, &s_to_y]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
+    //std::cout << "Got message" << std::endl;
+    //fwrite(data, length, 1, stdout);
+    //std::cout << std::endl;
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
-
+      
       auto s = hasData(data);
 
       if (s != "") {
-        auto j = json::parse(s);
+        std::cout << "parsing" << std::endl;
         
+        auto j = json::parse(s);
         string event = j[0].get<string>();
         
         if (event == "telemetry") {
@@ -97,13 +118,27 @@ int main() {
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
+          // keep lane
+          //auto target = getXY(car_s + TARGET_SPEED_MPS * 3.0, car_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+          //vector<double> traj = get_JLT_coeffs(current_state, target_state, 3.0);
+          //vector<vector<double>> get_traj_points(traj, d)
+          for (int i=0; i < (int)(2.25 / DELTA_T); i++) { // 3 seconds of trajectory
+            double s = car_s + TARGET_SPEED_MPS * DELTA_T * i;
+            std::cout << "converting " << s << std::endl;
+            double x = s_to_x(s);
+            double y = s_to_y(s);
+            std::cout << "after " << x << " " << y << std::endl;
+            next_x_vals.push_back(x);
+            next_y_vals.push_back(y);
+          }
 
+          
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
-
+          std::cout << "Sending msg..." << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }  // end "telemetry" if
       } else {
@@ -114,8 +149,11 @@ int main() {
     }  // end websocket if
   }); // end h.onMessage
 
-  h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
+  h.onConnection([&h, &s_to_x, &s_to_y](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
     std::cout << "Connected!!!" << std::endl;
+    s_to_x(1.2);
+    s_to_y(1.2);
+    std::cout << "wow!!!!" << std::endl;
   });
 
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
