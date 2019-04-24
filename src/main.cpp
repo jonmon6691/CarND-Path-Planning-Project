@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <cmath>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "helpers.h"
@@ -14,7 +15,7 @@ using nlohmann::json;
 using std::string;
 using std::vector;
 
-#define TARGET_SPEED_MPH ((double)50)
+#define TARGET_SPEED_MPH ((double)45)
 #define DELTA_T ((double)0.02)
 #define MPH_TO_MPS ((double)0.44704)
 #define TARGET_SPEED_MPS (TARGET_SPEED_MPH * MPH_TO_MPS)
@@ -59,16 +60,23 @@ int main() {
     map_waypoints_dy.push_back(d_y);
   }
 
-  double s = 124.834;
-  tk::spline s_to_x;// = new tk::spline();
-  tk::spline s_to_y;// = new tk::spline();
+  tk::spline s_to_x;
+  tk::spline s_to_y;
+  tk::spline s_to_dx;
+  tk::spline s_to_dy;
   s_to_x.set_points(map_waypoints_s, map_waypoints_x);
-  s_to_x.set_points(map_waypoints_s, map_waypoints_y);
+  s_to_y.set_points(map_waypoints_s, map_waypoints_y);
+  s_to_dx.set_points(map_waypoints_s, map_waypoints_dx);
+  s_to_dy.set_points(map_waypoints_s, map_waypoints_dy);
 
-  std::cout << s_to_x(s);
+  enum state {
+    FOLLOW,
+    KEEP_SPEED,
+  } car_state = KEEP_SPEED;
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &s_to_x, &s_to_y]
+               &map_waypoints_dx,&map_waypoints_dy, &s_to_x, &s_to_y,
+               &s_to_dx, &s_to_dy, &car_state]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -82,8 +90,6 @@ int main() {
       auto s = hasData(data);
 
       if (s != "") {
-        std::cout << "parsing" << std::endl;
-        
         auto j = json::parse(s);
         string event = j[0].get<string>();
         
@@ -122,14 +128,47 @@ int main() {
           //auto target = getXY(car_s + TARGET_SPEED_MPS * 3.0, car_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
           //vector<double> traj = get_JLT_coeffs(current_state, target_state, 3.0);
           //vector<vector<double>> get_traj_points(traj, d)
-          for (int i=0; i < (int)(2.25 / DELTA_T); i++) { // 3 seconds of trajectory
-            double s = car_s + TARGET_SPEED_MPS * DELTA_T * i;
-            std::cout << "converting " << s << std::endl;
-            double x = s_to_x(s);
-            double y = s_to_y(s);
-            std::cout << "after " << x << " " << y << std::endl;
-            next_x_vals.push_back(x);
-            next_y_vals.push_back(y);
+          int car_in_front;
+          switch (car_state) {
+          case KEEP_SPEED:
+            for (int i=0; i < (int)(2.25 / DELTA_T); i++) {
+              double s = car_s + TARGET_SPEED_MPS * DELTA_T * i;
+              double x = s_to_x(s)+2*s_to_dx(s);
+              double y = s_to_y(s)+2*s_to_dy(s);
+              next_x_vals.push_back(x);
+              next_y_vals.push_back(y);
+            }
+            car_in_front = get_car_in_front(car_s, car_d, sensor_fusion);
+            if (car_in_front >= 0) {
+              double cif_s = sensor_fusion[car_in_front][5];
+              if ((cif_s - car_s) < 5) {
+                car_state = FOLLOW;
+                std::cout << "Following " << car_in_front << std::endl;
+              }
+            }
+            break;
+          case FOLLOW:
+            car_in_front = get_car_in_front(car_s, car_d, sensor_fusion);
+            if (car_in_front < 0) {
+              car_state = KEEP_SPEED;
+              break;
+            }
+            double cif_s = sensor_fusion[car_in_front][5];
+            if ((cif_s - car_s) > 5) {
+              car_state = KEEP_SPEED;
+              break;
+            }
+            double vx = sensor_fusion[car_in_front][3];
+            double vy = sensor_fusion[car_in_front][4];
+            double car_in_front_v = sqrt(vx*vx+vy*vy);
+            for (int i=0; i < (int)(2.25 / DELTA_T); i++) {
+              double s = car_s + car_in_front_v * DELTA_T * i;
+              double x = s_to_x(s)+2*s_to_dx(s);
+              double y = s_to_y(s)+2*s_to_dy(s);
+              next_x_vals.push_back(x);
+              next_y_vals.push_back(y);
+            }
+            break;
           }
 
           
@@ -138,7 +177,6 @@ int main() {
           msgJson["next_y"] = next_y_vals;
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
-          std::cout << "Sending msg..." << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }  // end "telemetry" if
       } else {
@@ -151,9 +189,6 @@ int main() {
 
   h.onConnection([&h, &s_to_x, &s_to_y](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
     std::cout << "Connected!!!" << std::endl;
-    s_to_x(1.2);
-    s_to_y(1.2);
-    std::cout << "wow!!!!" << std::endl;
   });
 
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,

@@ -2,6 +2,7 @@
 #define HELPERS_H
 
 #include <math.h>
+#include <cmath>
 #include <string>
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
@@ -57,6 +58,35 @@ double rad2deg(double x) { return x * 180 / pi(); }
 double distance(double x1, double y1, double x2, double y2) {
   return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 }
+
+int get_car_in_front(double s, double d, const vector<vector<double>> &perception) {
+  int min_id = -1;
+  double min_distance = INFINITY;
+  for (vector<double> car: perception) {
+    double dd = fabs(car[6] - d);
+    double ds = car[5] - s;
+    if (dd < 2 && ds > 0 && ds < min_distance) {
+      min_distance = d;
+      min_id = car[0];
+    }
+  }
+  return min_id;
+}
+
+int get_closest_car(double x, double y, vector<vector<double>> &perception) {
+  int min_id = -1;
+  double min_distance = -1;
+  for (vector<double> car: perception) {
+    double d = distance(x, y, car[1], car[2]);
+    if (min_distance < 0 || d < min_distance) {
+      min_distance = d;
+      min_id = car[0];
+    }
+  }
+  return min_id;
+}
+
+vector<vector<double>> get_jlt_trajs(double x, double xx, double xxx);
 
 // Calculate closest waypoint to current x, y position
 int ClosestWaypoint(double x, double y, const vector<double> &maps_x, 

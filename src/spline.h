@@ -374,7 +374,6 @@ void spline::set_points(const std::vector<double>& x,
 
 double spline::operator() (double x) const
 {
-    std::cout << 1;
     size_t n=m_x.size();
     // find the closest point m_x[idx] < x, idx=0 even if x<m_x[0]
     std::vector<double>::const_iterator it;
@@ -383,7 +382,6 @@ double spline::operator() (double x) const
 
     double h=x-m_x[idx];
     double interpol;
-    std::cout << 2;
     if(x<m_x[0]) {
         // extrapolation to the left
         interpol=(m_b0*h + m_c0)*h + m_y[0];
