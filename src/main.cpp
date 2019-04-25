@@ -74,9 +74,11 @@ int main() {
     KEEP_SPEED,
   } car_state = KEEP_SPEED;
 
+  double car_last_vel = 0;
+
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy, &s_to_x, &s_to_y,
-               &s_to_dx, &s_to_dy, &car_state]
+               &s_to_dx, &s_to_dy, &car_state, &car_last_vel]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -105,8 +107,31 @@ int main() {
           double car_speed = j[1]["speed"];
 
           // Previous path data given to the Planner
-          auto previous_path_x = j[1]["previous_path_x"];
-          auto previous_path_y = j[1]["previous_path_y"];
+          vector<double> previous_path_x = j[1]["previous_path_x"];
+          double car_xx = 0;
+          double car_xxx = 0;
+          if (previous_path_x.size() > 3) {
+            car_xx = previous_path_x[1] - previous_path_x[0];
+            double car_xx2 = previous_path_x[2] - previous_path_x[1];
+            car_xxx = car_xx2 - car_xx;
+          }
+          vector<double> car_state_x = {car_x, car_xx, car_xxx};
+
+          vector<double> previous_path_y = j[1]["previous_path_y"];
+          double car_yy = 0;
+          double car_yyy = 0;
+          if (previous_path_y.size() > 3) {
+            car_yy = previous_path_y[1] - previous_path_y[0];
+            double car_yy2 = previous_path_y[2] - previous_path_y[1];
+            car_yyy = car_yy2 - car_yy;
+          }
+          vector<double> car_state_y = {car_y, car_yy, car_yyy};
+
+          vector<double> car_state_s = {car_s, car_speed * MPH_TO_MPS, car_speed * MPH_TO_MPS - car_last_vel};
+          car_last_vel = car_speed * MPH_TO_MPS;
+          vector<double> car_state_d = {car_d, 0, 0};
+
+
           // Previous path's end s and d values 
           double end_path_s = j[1]["end_path_s"];
           double end_path_d = j[1]["end_path_d"];
@@ -124,19 +149,23 @@ int main() {
            * TODO: define a path made up of (x,y) points that the car will visit
            *   sequentially every .02 seconds
            */
-          // keep lane
-          //auto target = getXY(car_s + TARGET_SPEED_MPS * 3.0, car_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-          //vector<double> traj = get_JLT_coeffs(current_state, target_state, 3.0);
-          //vector<vector<double>> get_traj_points(traj, d)
           int car_in_front;
+          vector<double> desired_state_s;
+          vector<double> desired_state_d;
+          vector<double> next_s;
+          vector<double> next_d;
+
           switch (car_state) {
           case KEEP_SPEED:
-            for (int i=0; i < (int)(2.25 / DELTA_T); i++) {
-              double s = car_s + TARGET_SPEED_MPS * DELTA_T * i;
-              double x = s_to_x(s)+2*s_to_dx(s);
-              double y = s_to_y(s)+2*s_to_dy(s);
-              next_x_vals.push_back(x);
-              next_y_vals.push_back(y);
+            desired_state_s.push_back(car_s + (TARGET_SPEED_MPS * 3.0));
+            desired_state_s.push_back(TARGET_SPEED_MPS);
+            desired_state_s.push_back(0);
+            desired_state_d = {2, 0, 0};
+            next_s = get_jmt_trajs(car_state_s, desired_state_s, 3.0, DELTA_T);
+            next_d = get_jmt_trajs(car_state_d, desired_state_d, 3.0, DELTA_T);
+            for (int i=0; i < next_s.size(); i++) {
+              next_x_vals.push_back(s_to_x(next_s[i]) + 2 * s_to_dx(next_s[i]));
+              next_y_vals.push_back(s_to_y(next_s[i]) + 2 * s_to_dy(next_s[i]));
             }
             car_in_front = get_car_in_front(car_s, car_d, sensor_fusion);
             if (car_in_front >= 0) {

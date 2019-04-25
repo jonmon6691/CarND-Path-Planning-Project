@@ -7,6 +7,7 @@
 #include <vector>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
+#include "Eigen-3.3/Eigen/LU"
 
 // for convenience
 using std::string;
@@ -26,24 +27,7 @@ string hasData(string s) {
   }
   return "";
 }
-/*
-vector<double> get_JLT_coeffs(vector<double> current_state, vector<double> target_state, double elapsed_time)
-{
-  VectorXd high(3);
-  VectorXd numerator(3);
-  MatrixXd denominator(3,3);
-   
-  numerator << (end[0] - (start[0] + start[1]*T + start[2]*T*T/2)),
-               (end[1] - (start[1] + start[2]*T)),
-               (end[2] - start[2]);
-  denominator << pow(T, 3),    pow(T, 4),    pow(T, 5),
-               3*pow(T, 2),  4*pow(T, 3),  5*pow(T, 4),
-               6*T,         12*pow(T, 2), 20*pow(T, 3);
-  denominator = denominator.inverse();
-  high = (numerator.transpose() * denominator.transpose());
-  return {start[0], start[1], start[2]/2, high[0], high[1], high[2]};
-}
-*/
+
 //
 // Helper functions related to waypoints and converting from XY to Frenet
 //   or vice versa
@@ -86,7 +70,32 @@ int get_closest_car(double x, double y, vector<vector<double>> &perception) {
   return min_id;
 }
 
-vector<vector<double>> get_jlt_trajs(double x, double xx, double xxx);
+vector<double> get_jmt_trajs(vector<double> & start, vector<double> & end, double T, double dt)
+{
+  Eigen::VectorXd high(3);
+  Eigen::VectorXd numerator(3);
+  Eigen::MatrixXd denominator(3,3);
+  
+  numerator << (end[0] - (start[0] + start[1]*T + start[2]*T*T/2)),
+              (end[1] - (start[1] + start[2]*T)),
+              (end[2] - start[2]);
+  denominator <<    pow(T, 3),    pow(T, 4),    pow(T, 5),
+                  3*pow(T, 2),  4*pow(T, 3),  5*pow(T, 4),
+                  6*T,         12*pow(T, 2), 20*pow(T, 3);
+  denominator = denominator.inverse();
+  high = (numerator.transpose() * denominator.transpose());
+  vector<double> coeffs = {start[0], start[1], start[2]/2, high[0], high[1], high[2]};
+  vector<double> trajectory;
+  for (int i = 0; i < T / dt; i++) {
+    double val = 0;
+    for (int j = 0; j < 6; j++) {
+      val += coeffs[j] * pow((double)i * dt, j);
+    }
+    trajectory.push_back(val);
+    //std::cout << val << std::endl;
+  }
+  return trajectory;
+}
 
 // Calculate closest waypoint to current x, y position
 int ClosestWaypoint(double x, double y, const vector<double> &maps_x, 
