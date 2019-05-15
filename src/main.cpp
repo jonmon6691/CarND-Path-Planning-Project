@@ -10,6 +10,8 @@
 #include "json.hpp"
 #include "spline.h"
 
+#include "car.hpp"
+
 // for convenience
 using nlohmann::json;
 using std::string;
@@ -70,15 +72,19 @@ int main() {
   s_to_dy.set_points(map_waypoints_s, map_waypoints_dy);
 
   enum state {
+    INIT,
     FOLLOW,
     KEEP_SPEED,
-  } car_state = KEEP_SPEED;
+  } car_state = INIT;
 
+  vector<double> previous_path_s;
   double car_last_vel = 0;
+  int flag = 1;
+  car ego;
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
                &map_waypoints_dx,&map_waypoints_dy, &s_to_x, &s_to_y,
-               &s_to_dx, &s_to_dy, &car_state, &car_last_vel]
+               &s_to_dx, &s_to_dy, &car_state, &car_last_vel, &flag, &previous_path_s, &ego]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -97,7 +103,6 @@ int main() {
         
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          
           // Main car's localization Data
           double car_x = j[1]["x"];
           double car_y = j[1]["y"];
@@ -140,7 +145,7 @@ int main() {
           //   of the road.
           auto sensor_fusion = j[1]["sensor_fusion"];
 
-          json msgJson;
+          ego.update_state(telemetry);
 
           vector<double> next_x_vals;
           vector<double> next_y_vals;
@@ -156,52 +161,20 @@ int main() {
           vector<double> next_d;
 
           switch (car_state) {
-          case KEEP_SPEED:
-            desired_state_s.push_back(car_s + (TARGET_SPEED_MPS * 3.0));
-            desired_state_s.push_back(TARGET_SPEED_MPS);
-            desired_state_s.push_back(0);
-            desired_state_d = {2, 0, 0};
-            next_s = get_jmt_trajs(car_state_s, desired_state_s, 3.0, DELTA_T);
-            next_d = get_jmt_trajs(car_state_d, desired_state_d, 3.0, DELTA_T);
-            for (int i=0; i < next_s.size(); i++) {
-              next_x_vals.push_back(s_to_x(next_s[i]) + 2 * s_to_dx(next_s[i]));
-              next_y_vals.push_back(s_to_y(next_s[i]) + 2 * s_to_dy(next_s[i]));
-            }
-            car_in_front = get_car_in_front(car_s, car_d, sensor_fusion);
-            if (car_in_front >= 0) {
-              double cif_s = sensor_fusion[car_in_front][5];
-              if ((cif_s - car_s) < 5) {
-                car_state = FOLLOW;
-                std::cout << "Following " << car_in_front << std::endl;
-              }
-            }
+          case INIT:
+            ;
             break;
-          case FOLLOW:
-            car_in_front = get_car_in_front(car_s, car_d, sensor_fusion);
-            if (car_in_front < 0) {
-              car_state = KEEP_SPEED;
-              break;
-            }
-            double cif_s = sensor_fusion[car_in_front][5];
-            if ((cif_s - car_s) > 5) {
-              car_state = KEEP_SPEED;
-              break;
-            }
-            double vx = sensor_fusion[car_in_front][3];
-            double vy = sensor_fusion[car_in_front][4];
-            double car_in_front_v = sqrt(vx*vx+vy*vy);
-            for (int i=0; i < (int)(2.25 / DELTA_T); i++) {
-              double s = car_s + car_in_front_v * DELTA_T * i;
-              double x = s_to_x(s)+2*s_to_dx(s);
-              double y = s_to_y(s)+2*s_to_dy(s);
-              next_x_vals.push_back(x);
-              next_y_vals.push_back(y);
-            }
+          default:
             break;
           }
 
-          
+          if (flag <= 0) {
+            next_x_vals = previous_path_x;
+            next_y_vals = previous_path_y;
+          }
+          flag -= 1;
 
+          json msgJson;
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
